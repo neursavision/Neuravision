@@ -5,6 +5,7 @@ const getClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 // Helper para limpar blocos de código Markdown de respostas JSON ou Texto
 const cleanResponseText = (text: string) => {
   if (!text) return "";
+  // Remove markdown code blocks like ```json ... ``` or just ``` ... ```
   return text.replace(/^```(json|markdown)?\n/i, '').replace(/\n```$/i, '').trim();
 };
 
@@ -48,6 +49,7 @@ export const generateDeepDiagnosis = async (businessData: string, filesData: str
     9. Simulação de 3 cenários (simulations).
 
     Certifique-se de que todos os textos estejam em Português do Brasil.
+    Responda APENAS com o objeto JSON.
   `;
 
   const response = await ai.models.generateContent({
@@ -148,7 +150,8 @@ export const generateDeepDiagnosis = async (businessData: string, filesData: str
 
   const rawText = response.text || "{}";
   try {
-      return JSON.parse(cleanResponseText(rawText));
+      const cleaned = cleanResponseText(rawText);
+      return JSON.parse(cleaned);
   } catch (error) {
       console.error("Erro ao fazer parse do JSON do Gemini:", error, rawText);
       return { 

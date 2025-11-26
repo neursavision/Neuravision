@@ -13,7 +13,7 @@ const VoiceConsultant: React.FC<VoiceConsultantProps> = ({ systemInstruction }) 
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const inputContextRef = useRef<AudioContext | null>(null);
-  const sessionRef = useRef<any>(null); // To store the session promise/object
+  const sessionRef = useRef<Promise<any> | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
@@ -167,7 +167,16 @@ const VoiceConsultant: React.FC<VoiceConsultantProps> = ({ systemInstruction }) 
     if (inputContextRef.current) inputContextRef.current.close();
     if (audioContextRef.current) audioContextRef.current.close();
     
-    // Attempt to close session if SDK exposes it, strictly we just let connections drop/cleanup
+    // Close the Live Session
+    if (sessionRef.current) {
+      try {
+        const session = await sessionRef.current;
+        session.close();
+      } catch (e) {
+        console.warn("Session already closed or failed", e);
+      }
+    }
+    
     setIsActive(false);
     setStatus('disconnected');
     setVolume(0);
@@ -180,7 +189,7 @@ const VoiceConsultant: React.FC<VoiceConsultantProps> = ({ systemInstruction }) 
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center p-8 bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl relative overflow-hidden">
+    <div className="flex flex-col items-center justify-center p-8 bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl relative overflow-hidden h-full">
         {/* Background Animation */}
         <div className={`absolute inset-0 bg-blue-500/10 transition-opacity duration-1000 ${isActive ? 'opacity-100' : 'opacity-0'}`} />
         

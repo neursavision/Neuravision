@@ -1,5 +1,5 @@
 {
-  "name": "Copy of Neuravision",
+  "name": "Neuravision",
   "description": "Um sistema avançado de consultoria empresarial com IA, oferecendo diagnóstico preditivo, consultoria em tempo real e planejamento estratégico.",
   "requestFramePermissions": [
     "microphone",

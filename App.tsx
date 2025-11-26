@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   LayoutDashboard, FileText, MessageSquare, FileBarChart, 
-  Zap, Menu, Upload, Loader2, Sparkles, Volume2, GraduationCap, ClipboardList, FileBadge, Download
+  Zap, Menu, Upload, Loader2, Sparkles, Volume2, GraduationCap, ClipboardList, FileBadge, Download, Pause
 } from 'lucide-react';
 import { AppView, BusinessProfile, AnalysisReport, ChatMessage } from './types';
 import Dashboard from './components/Dashboard';
@@ -9,14 +9,15 @@ import VoiceConsultant from './components/VoiceConsultant';
 import ImpactSimulator from './components/ImpactSimulator';
 import AnalyticalSummary from './components/AnalyticalSummary';
 import HbsAnalysis from './components/HbsAnalysis';
-import { generateDeepDiagnosis, sendFastChatMessage, generateSpeech } from './services/geminiService';
+import { generateDeepDiagnosis, sendFastChatMessage, generateSpeech, decodeAudioData } from './services/geminiService';
 
 // Simple Markdown Component to render the Action Plan nicely
 const SimpleMarkdown = ({ text }: { text: string }) => {
   if (!text) return <p className="text-slate-500 italic">Nenhum plano de ação gerado.</p>;
   
-  // Split by double newline for paragraphs to separate blocks
-  const blocks = text.split(/\n\n+/);
+  // Normalize line breaks to handle different LLM output styles
+  const normalizedText = text.replace(/\n\s*-\s/g, '\n- '); // Ensure lists have newlines
+  const blocks = normalizedText.split(/\n\n+/);
   
   return (
     <div className="space-y-4 text-slate-300 leading-relaxed">
@@ -32,14 +33,13 @@ const SimpleMarkdown = ({ text }: { text: string }) => {
             return <h3 key={idx} className="text-xl font-bold text-slate-900 print:text-black dark:text-white mt-8 mb-4 border-b border-slate-700 pb-2">{trimmedBlock.replace(/##\s?/, '')}</h3>
         }
         
-        // Lists (Bullet points)
-        if (trimmedBlock.includes('\n- ') || trimmedBlock.startsWith('- ') || trimmedBlock.startsWith('* ')) {
+        // Lists (Bullet points) - Improved detection
+        if (trimmedBlock.startsWith('- ') || trimmedBlock.startsWith('* ')) {
             const items = trimmedBlock.split('\n').filter(line => line.trim().match(/^[-*]\s/));
             return (
                 <ul key={idx} className="list-disc pl-5 space-y-2 mb-4">
                     {items.map((item, i) => {
                         const content = item.replace(/^[-*]\s?/, '');
-                        // Handle Bold inside list items
                         const parts = content.split(/(\*\*.*?\*\*)/g);
                         return (
                             <li key={i} className="text-slate-300 print:text-black">
@@ -83,6 +83,10 @@ const App = () => {
   const [chatInput, setChatInput] = useState('');
   const [isChatting, setIsChatting] = useState(false);
   const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioSource, setAudioSource] = useState<AudioBufferSourceNode | null>(null);
+  
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   // Handlers
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,15 +149,44 @@ const App = () => {
   };
 
   const playSummary = async () => {
+    if (isPlayingAudio) {
+        if (audioSource) {
+            audioSource.stop();
+            setAudioSource(null);
+        }
+        setIsPlayingAudio(false);
+        return;
+    }
+
     if (!report?.diagnosis) return;
+    
     try {
+        setIsPlayingAudio(true);
+        // Get raw PCM data (base64)
         const audioBase64 = await generateSpeech(report.diagnosis.substring(0, 300)); 
         if (audioBase64) {
-             const audio = new Audio("data:audio/wav;base64," + audioBase64);
-             audio.play();
+             if (!audioContextRef.current) {
+                audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+             }
+             
+             const ctx = audioContextRef.current;
+             const buffer = await decodeAudioData(audioBase64, ctx);
+             
+             const source = ctx.createBufferSource();
+             source.buffer = buffer;
+             source.connect(ctx.destination);
+             source.onended = () => {
+                 setIsPlayingAudio(false);
+                 setAudioSource(null);
+             };
+             source.start(0);
+             setAudioSource(source);
+        } else {
+            setIsPlayingAudio(false);
         }
     } catch (e) {
         console.error("TTS Failed", e);
+        setIsPlayingAudio(false);
     }
   }
 
@@ -242,8 +275,12 @@ const App = () => {
              <div className="flex justify-between items-center border-b border-slate-700 pb-4 no-print">
                 <h2 className="text-3xl font-bold text-white">Relatório Estratégico Avançado</h2>
                 <div className="flex gap-2">
-                    <button onClick={playSummary} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-600 text-sm transition-colors">
-                        <Volume2 size={16} /> Ouvir Resumo
+                    <button 
+                        onClick={playSummary} 
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm transition-colors ${isPlayingAudio ? 'bg-red-500/20 text-red-400 border-red-500' : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-600'}`}
+                    >
+                        {isPlayingAudio ? <Pause size={16} /> : <Volume2 size={16} />} 
+                        {isPlayingAudio ? "Parar" : "Ouvir Resumo"}
                     </button>
                     <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors text-white">
                         <Download size={16} /> Baixar PDF
